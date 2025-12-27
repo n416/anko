@@ -1,0 +1,714 @@
+import os
+
+# --- 1. .gitignore Content ---
+GITIGNORE_CONTENT = """# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# User Data (Saved sets)
+sets/*.json
+!sets/.keep
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+"""
+
+# --- 2. README.md Content (English) ---
+README_TEMPLATE = """# 🍡 Anko - Smart Dependency Extractor
+
+[ [日本語](README.ja.md) | English ]
+
+**Anko** is a powerful file extraction tool designed for LLM-based development context gathering.
+It parses your codebase (JS/TS, Python, HTML), visualizes dependency graphs (AST-based), and allows you to select files recursively with a specific depth.
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+## ✨ Features
+
+- **AST-Based Parsing**: Correctly identifies imports in JavaScript, TypeScript, JSX, TSX, Python, and HTML.
+- **Recursive Selection**: Select "Parents" (callers) or "Children" (dependencies) with a customizable depth slider.
+- **Smart Context**: Generates a single markdown text block ready to be pasted into ChatGPT, Claude, or Gemini.
+- **Save/Load System**: Save your working context (file sets) into "Slots" or export them as JSON files.
+- **Local Browser**: Navigate and switch target directories directly from the Web UI.
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js (v16 or higher)
+- Python (optional, required for parsing `.py` files)
+
+### Installation
+
+1. Clone this repository.
+2. Install dependencies:
+
+__CODE__bash
+npm install
+__CODE__
+
+### Usage
+
+Start the local server:
+
+__CODE__bash
+npm start
+__CODE__
+
+Open your browser at `http://localhost:3000`.
+
+## 🛠 Tech Stack
+
+- **Backend**: Node.js (Express), TypeScript Compiler API, Python `ast` module.
+- **Frontend**: Vue 3 (CDN), Tailwind CSS.
+
+## 📝 License
+
+This project is licensed under the MIT License.
+"""
+
+# --- 3. README.ja.md Content (Japanese) ---
+README_JA_TEMPLATE = """# 🍡 Anko - Smart Dependency Extractor
+
+[ 日本語 | [English](README.md) ]
+
+**Anko** は、LLM（大規模言語モデル）を用いた開発における「コンテキスト収集」を効率化するために設計された強力なファイル抽出ツールです。
+JS/TS、Python、HTMLなどのコードベースを解析して依存関係グラフ（ASTベース）を構築し、指定した深度（Depth）まで再帰的に関連ファイルを一括選択できます。
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+## ✨ 特徴
+
+- **ASTベースの解析**: JavaScript, TypeScript, JSX, TSX, Python, HTML の import/require/src などを正規表現ではなく構文木レベルで正確に識別します。
+- **再帰的な選択**: 「親（呼び出し元）」や「子（依存先）」を、スライダーで指定した深さまで芋づる式に選択できます。
+- **スマートコンテキスト**: ChatGPT, Claude, Gemini 等にそのまま貼り付けられる形式（ファイルパス＋コードブロック）のMarkdownテキストを瞬時に生成します。
+- **セーブ＆ロード**: 作業中のファイルセットを「冒険の書（スロット）」に保存したり、JSONファイルとしてエクスポート/インポートしたりできます。
+- **ローカルブラウザ**: OSのダイアログを使わず、Web UI上から解析対象のディレクトリを自由に移動・切り替え可能です。
+
+## 🚀 はじめ方
+
+### 前提条件
+
+- Node.js (v16 以上)
+- Python (オプション: `.py` ファイルの解析を行う場合に必要)
+
+### インストール
+
+1. リポジトリをクローンします。
+2. 依存パッケージをインストールします:
+
+__CODE__bash
+npm install
+__CODE__
+
+### 使い方
+
+ローカルサーバーを起動します:
+
+__CODE__bash
+npm start
+__CODE__
+
+ブラウザで `http://localhost:3000` にアクセスしてください。
+
+## 🛠 技術スタック
+
+- **Backend**: Node.js (Express), TypeScript Compiler API, Python `ast` module.
+- **Frontend**: Vue 3 (CDN), Tailwind CSS.
+
+## 📝 ライセンス
+
+本プロジェクトは MIT ライセンスの下で公開されています。
+"""
+
+# --- 4. index.html Content (Fix: Event Listeners) ---
+INDEX_HTML_CONTENT = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Anko - Smart Extractor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        :root { --anko: #963541; --anko-dark: #6d252e; }
+        body { background: #fcfcfc; color: #333; user-select: none; }
+        .anko-bg { background: var(--anko); }
+        .anko-text { color: var(--anko); }
+        
+        /* Editor Styles */
+        .editor-container { font-family: Consolas, 'Courier New', monospace; background: #1e1e1e; color: #d4d4d4; }
+        .line-numbers { background: #252526; color: #858585; text-align: right; }
+
+        /* Dark Scrollbar (Editor) */
+        .dark-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+        .dark-scroll::-webkit-scrollbar-track { background: #1e1e1e; }
+        .dark-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 5px; border: 2px solid #1e1e1e; }
+        .dark-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        /* Light Scrollbar (Sidebar) */
+        .light-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+        .light-scroll::-webkit-scrollbar-track { background: transparent; }
+        .light-scroll::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; border: 2px solid #fff; }
+        .light-scroll::-webkit-scrollbar-thumb:hover { background: #bbb; }
+        
+        .btn-disabled { opacity: 0.3; cursor: not-allowed; background-color: #eee !important; color: #aaa !important; border-color: #ddd !important; pointer-events: none; }
+        .modal-enter-active, .modal-leave-active { transition: opacity 0.2s; }
+        .modal-enter-from, .modal-leave-to { opacity: 0; }
+        .slot-row.selected { background-color: #ffe4e6; border-color: var(--anko); }
+
+        /* Resizer Handle */
+        .resizer {
+            width: 5px;
+            cursor: col-resize;
+            background-color: #f3f4f6;
+            border-left: 1px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+            transition: background-color 0.2s;
+            z-index: 20;
+        }
+        .resizer:hover, .resizer.active { background-color: #963541; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+    <div id="app" class="flex flex-col h-full relative">
+        <header class="anko-bg text-white px-6 py-3 shadow flex justify-between items-center z-10 shrink-0">
+            <div class="flex items-center gap-2">
+                <span class="text-2xl">🍡</span>
+                <h1 class="text-xl font-bold">ANKO</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 bg-white/10 px-3 py-1 rounded text-sm max-w-[400px]">
+                    <span class="opacity-70 text-xs uppercase tracking-wide">Target:</span>
+                    <span class="font-mono truncate max-w-[200px]" :title="rootPath">{{ rootPath }}</span>
+                    <button @click="openDirModal" class="ml-2 bg-white text-[#963541] px-2 py-0.5 rounded text-xs font-bold hover:bg-gray-100 transition-colors flex items-center gap-1 whitespace-nowrap">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                        {{ t('selectDir') }}
+                    </button>
+                </div>
+                <button @click="toggleLang" class="text-xs border border-white/50 px-2 py-1 rounded hover:bg-white/20 font-mono">
+                    {{ locale === 'ja' ? 'EN' : 'JA' }}
+                </button>
+            </div>
+        </header>
+
+        <div class="flex flex-1 overflow-hidden">
+            <div class="flex flex-col border-r bg-white min-w-[300px]" :style="{ width: sidebarWidth + 'px' }">
+                <div class="p-3 border-b bg-gray-50 flex flex-col gap-2 shrink-0">
+                    <input v-model="searchQuery" type="text" :placeholder="t('searchPlaceholder')" class="w-full px-3 py-2 border rounded focus:outline-none focus:border-[#963541]">
+                    <div class="flex justify-between items-center text-sm">
+                        <span>{{ t('selected') }} <b class="anko-text">{{ selectedFiles.length }}</b></span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-gray-500">{{ t('depth') }}</span>
+                            <input type="number" v-model.number="searchDepth" min="1" max="10" class="w-12 px-1 border rounded text-center">
+                            <button @click="selectedFiles=[]" class="text-xs text-red-500 hover:underline">{{ t('clear') }}</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-2 light-scroll">
+                    <div v-if="loading" class="text-center p-10 text-gray-400">Loading...</div>
+                    <div v-else>
+                        <div v-for="file in filteredFiles" :key="file" 
+                             class="flex items-center p-1 hover:bg-gray-100 rounded group transition-colors"
+                             :class="{'bg-red-50': selectedFiles.includes(file)}">
+                            <div v-if="depthCounts[file]" class="flex gap-1 mr-2 min-w-[100px] justify-end shrink-0">
+                                <button @click.stop="toggleDeep(file, 'parents')" 
+                                        :class="getBtnClass(file, 'parents')"
+                                        :disabled="depthCounts[file].p === 0"
+                                        :title="t('parentsTooltip')"
+                                        class="px-1.5 py-0.5 text-[10px] rounded font-bold transition-colors border">
+                                    {{ t('parents') }}({{ depthCounts[file].p }})
+                                </button>
+                                <button @click.stop="toggleDeep(file, 'children')" 
+                                        :class="getBtnClass(file, 'children')"
+                                        :disabled="depthCounts[file].c === 0"
+                                        :title="t('childrenTooltip')"
+                                        class="px-1.5 py-0.5 text-[10px] rounded font-bold transition-colors border">
+                                    {{ t('children') }}({{ depthCounts[file].c }})
+                                </button>
+                            </div>
+                            <div v-else class="w-[100px] mr-2 text-[10px] text-gray-300 text-center shrink-0">-</div>
+                            <div class="flex-1 flex items-center cursor-pointer truncate min-w-0" @click="toggleFile(file)">
+                                <span class="mr-2 text-gray-400 text-xs shrink-0" v-if="selectedFiles.includes(file)">✔</span>
+                                <span class="text-sm truncate" :title="file">{{ file }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-3 border-t bg-gray-50 flex justify-center shrink-0">
+                    <button @click="openSaveLoadModal" class="w-full py-2 bg-[#963541] text-white font-bold rounded shadow hover:opacity-90 flex items-center justify-center gap-2">
+                        <span>📖</span> {{ t('saveLoadBtn') }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="resizer" :class="{ 'active': isResizing }" @mousedown="startResize"></div>
+
+            <div class="flex-1 flex flex-col bg-gray-100 min-w-0">
+                <div class="p-3 bg-white border-b flex justify-between items-center shadow-sm z-10 shrink-0">
+                    <h2 class="font-bold text-gray-700">{{ t('preview') }}</h2>
+                    <div class="flex gap-2">
+                        <button @click="clearOutput" class="px-4 py-1.5 bg-gray-200 text-gray-600 rounded text-sm font-bold hover:bg-gray-300 hover:text-red-500 transition-colors">{{ t('clear') }}</button>
+                        <button @click="generate" class="px-4 py-1.5 bg-gray-700 text-white rounded text-sm font-bold hover:bg-gray-600 shadow">{{ t('generate') }}</button>
+                        <button @click="copy" class="px-4 py-1.5 bg-[#963541] text-white rounded text-sm font-bold hover:opacity-90 shadow">{{ t('copy') }}</button>
+                    </div>
+                </div>
+                
+                <div class="flex-1 flex overflow-hidden editor-container relative">
+                    <div ref="lineNumEl" class="line-numbers w-12 pt-4 pr-2 text-xs leading-5 overflow-hidden dark-scroll">
+                        <div v-for="n in lineCount" :key="n">{{ n }}</div>
+                    </div>
+                    <textarea ref="textAreaEl" v-model="output" 
+                              @scroll="syncScroll" spellcheck="false"
+                              :placeholder="t('editorPlaceholder')"
+                              class="flex-1 bg-[#1e1e1e] text-[#d4d4d4] p-4 pl-2 text-xs leading-5 resize-none focus:outline-none border-none outline-none w-full h-full whitespace-pre dark-scroll"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <transition name="modal">
+            <div v-if="showDirModal" class="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div class="bg-white w-full max-w-2xl rounded-lg shadow-xl flex flex-col max-h-[80vh]">
+                    <div class="p-4 border-b bg-gray-50 flex justify-between items-center rounded-t-lg">
+                        <h3 class="font-bold text-lg text-gray-700">{{ t('modalDirTitle') }}</h3>
+                        <button @click="showDirModal = false" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <div class="p-2 border-b bg-gray-100 text-sm font-mono truncate px-4">{{ browsingPath || 'Drivers' }}</div>
+                    <div class="flex-1 overflow-y-auto p-2 min-h-[300px] light-scroll">
+                        <div v-if="browsingParent !== null" @click="browseDir(browsingParent)" class="flex items-center p-2 hover:bg-blue-50 cursor-pointer rounded text-blue-600 font-bold"><span class="mr-2">⬆</span> {{ t('modalDirParent') }}</div>
+                        <div v-for="dir in browsingDirs" :key="dir" @click="browseDir(browsingPath ? (browsingPath + '/' + dir) : dir)" class="flex items-center p-2 hover:bg-gray-100 cursor-pointer rounded border-b border-gray-50"><span class="mr-2 text-yellow-500">📁</span><span class="text-sm">{{ dir }}</span></div>
+                    </div>
+                    <div class="p-4 border-t bg-gray-50 flex justify-end gap-3 rounded-b-lg">
+                        <button @click="showDirModal = false" class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded">{{ t('cancel') }}</button>
+                        <button @click="applyNewRoot" class="px-6 py-2 bg-[#963541] text-white font-bold rounded shadow hover:opacity-90">{{ t('modalDirDecide') }}</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <transition name="modal">
+            <div v-if="showSLModal" class="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div class="bg-white w-full max-w-md rounded-lg shadow-xl flex flex-col max-h-[90vh]">
+                    <div class="p-4 border-b bg-[#963541] text-white flex justify-between items-center rounded-t-lg">
+                        <h3 class="font-bold text-lg">{{ t('modalSLTitle') }}</h3>
+                        <button @click="showSLModal = false" class="text-white hover:text-gray-200">✕</button>
+                    </div>
+                    <div v-if="!slMode" class="p-6 flex flex-col gap-4 items-center">
+                        <p class="text-gray-600 font-bold mb-1">{{ t('whatToDo') }}</p>
+                        <div class="grid grid-cols-2 gap-4 w-full">
+                            <button @click="slMode='save'" class="py-4 bg-blue-600 text-white rounded-lg font-bold shadow hover:bg-blue-500 flex flex-col items-center hover:scale-[1.02] transition-transform"><span class="text-2xl mb-1">💾</span>{{ t('save') }}</button>
+                            <button @click="slMode='load'" class="py-4 bg-green-600 text-white rounded-lg font-bold shadow hover:bg-green-500 flex flex-col items-center hover:scale-[1.02] transition-transform"><span class="text-2xl mb-1">📂</span>{{ t('load') }}</button>
+                        </div>
+                        <hr class="w-full border-gray-200 my-1">
+                        <div class="grid grid-cols-2 gap-4 w-full">
+                            <button @click="slMode='export'" class="py-3 bg-gray-600 text-white rounded-lg font-bold shadow hover:bg-gray-500 flex flex-col items-center text-sm hover:scale-[1.02] transition-transform"><span class="text-xl mb-1">📤</span>{{ t('export') }}</button>
+                            <button @click="triggerImport" class="py-3 bg-gray-600 text-white rounded-lg font-bold shadow hover:bg-gray-500 flex flex-col items-center text-sm hover:scale-[1.02] transition-transform"><span class="text-xl mb-1">📥</span>{{ t('import') }}</button>
+                        </div>
+                        <input type="file" ref="fileInput" class="hidden" accept=".json" @change="handleFileImport">
+                    </div>
+                    <div v-else class="flex flex-col flex-1 overflow-hidden">
+                        <div class="p-3 bg-gray-50 border-b flex justify-between items-center">
+                            <button @click="slMode=''" class="text-sm text-gray-500 hover:text-gray-800 font-bold">{{ t('back') }}</button>
+                            <span class="font-bold text-[#963541] text-sm">{{ getModeTitle() }}</span>
+                            <div class="w-8"></div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-gray-100 light-scroll">
+                            <div v-for="slot in slots" :key="slot.id" @click="selectedSlotId = slot.id" class="slot-row border-2 rounded-lg p-3 cursor-pointer bg-white transition-all shadow-sm relative group" :class="selectedSlotId === slot.id ? 'border-[#963541] ring-1 ring-[#963541]' : 'border-gray-300 hover:border-gray-400'">
+                                <div class="flex justify-between items-start mb-1">
+                                    <span class="font-bold text-gray-700">Slot {{ slot.id }}</span>
+                                    <span class="text-xs text-gray-400 font-mono">{{ slot.data ? slot.data.date : '--/--/-- --:--' }}</span>
+                                </div>
+                                <input v-model="slot.tempName" @click.stop="selectedSlotId = slot.id" :placeholder="t('namePlaceholder')" class="w-full text-sm border-b border-dashed border-gray-300 focus:border-[#963541] focus:outline-none bg-transparent py-1 text-gray-600 placeholder-gray-300">
+                                <div v-if="!slot.data" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10"><span class="text-3xl font-bold">EMPTY</span></div>
+                            </div>
+                        </div>
+                        <div class="p-4 border-t bg-white flex justify-end gap-3 rounded-b-lg">
+                            <button @click="showSLModal = false" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{{ t('cancel') }}</button>
+                            <button @click="executeAction" :disabled="!isActionExecutable()" class="px-8 py-2 bg-[#963541] text-white font-bold rounded shadow hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">{{ t('ok') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, watch, onMounted } = Vue;
+        
+        // i18n
+        const messages = {
+            ja: {
+                selectDir: "フォルダ選択",
+                searchPlaceholder: "ファイルを検索...",
+                selected: "選択中:",
+                depth: "深度:",
+                clear: "クリア",
+                parents: "親",
+                children: "子",
+                parentsTooltip: "呼び出し元(親)を追加選択",
+                childrenTooltip: "依存先(子)を追加選択",
+                saveLoadBtn: "冒険の書 (Save / Load)",
+                preview: "プレビュー",
+                generate: "生成 (Generate)",
+                copy: "コピー",
+                editorPlaceholder: "ファイルを選択してGenerateを押してください...",
+                modalDirTitle: "フォルダを選択",
+                modalDirParent: ".. (親フォルダへ)",
+                modalDirDecide: "ここで決定",
+                cancel: "キャンセル",
+                modalSLTitle: "冒険の書",
+                whatToDo: "何を行いますか？",
+                save: "記録する (SAVE)",
+                load: "読み込む (LOAD)",
+                export: "ファイルへ書き出し",
+                import: "ファイルから復元",
+                back: "← 戻る",
+                namePlaceholder: "名前を入力...",
+                ok: "決定 (OK)",
+                msgSaved: "記録しました。",
+                msgLoaded: "読み込みました。",
+                msgCopied: "コピーしました！",
+                slTitleSave: "記録する場所を選んでください",
+                slTitleLoad: "読み込むデータを選んでください",
+                slTitleExport: "書き出すデータを選んでください",
+                slTitleImport: "復元する場所を選んでください",
+                confirmImport: "スロットに保存しました。\\nこのデータを現在の選択状態にも反映しますか？",
+                errLoad: "読込失敗",
+                errMove: "移動失敗"
+            },
+            en: {
+                selectDir: "Select Folder",
+                searchPlaceholder: "Search files...",
+                selected: "Selected:",
+                depth: "Depth:",
+                clear: "Clear",
+                parents: "Parents",
+                children: "Children",
+                parentsTooltip: "Select Callers (Parents)",
+                childrenTooltip: "Select Dependencies (Children)",
+                saveLoadBtn: "Save / Load / Export",
+                preview: "Preview",
+                generate: "Generate",
+                copy: "Copy",
+                editorPlaceholder: "Select files and press Generate...",
+                modalDirTitle: "Select Directory",
+                modalDirParent: ".. (Parent Dir)",
+                modalDirDecide: "Select This Folder",
+                cancel: "Cancel",
+                modalSLTitle: "Data Management",
+                whatToDo: "Choose Action",
+                save: "Save Slot",
+                load: "Load Slot",
+                export: "Export to File",
+                import: "Import from File",
+                back: "← Back",
+                namePlaceholder: "Enter name...",
+                ok: "OK",
+                msgSaved: "Saved successfully.",
+                msgLoaded: "Loaded successfully.",
+                msgCopied: "Copied to clipboard!",
+                slTitleSave: "Select a slot to save",
+                slTitleLoad: "Select a slot to load",
+                slTitleExport: "Select a slot to export",
+                slTitleImport: "Select a slot to overwrite",
+                confirmImport: "Imported to slot.\\nDo you want to apply this data to current selection?",
+                errLoad: "Failed to load",
+                errMove: "Failed to move"
+            }
+        };
+
+        createApp({
+            setup() {
+                const locale = ref(navigator.language.startsWith('ja') ? 'ja' : 'en');
+                const t = (key) => messages[locale.value][key] || key;
+                const toggleLang = () => { locale.value = locale.value === 'ja' ? 'en' : 'ja'; };
+
+                // Resizable Sidebar (Global Listeners)
+                const sidebarWidth = ref(450);
+                const isResizing = ref(false);
+                const startResize = () => { isResizing.value = true; };
+                const stopResize = () => { isResizing.value = false; };
+                const resize = (e) => {
+                    if (!isResizing.value) return;
+                    if (e.clientX > 200 && e.clientX < window.innerWidth - 200) {
+                        sidebarWidth.value = e.clientX;
+                    }
+                };
+
+                // App State
+                const rootPath = ref('');
+                const allFiles = ref([]);
+                const graph = ref({});
+                const selectedFiles = ref([]);
+                const searchQuery = ref('');
+                const searchDepth = ref(1);
+                const output = ref('');
+                const loading = ref(true);
+                const depthCounts = ref({});
+
+                // Editor
+                const lineNumEl = ref(null);
+                const textAreaEl = ref(null);
+                const lineCount = computed(() => (output.value ? output.value.split('\\n').length : 1));
+                const syncScroll = () => { if(lineNumEl.value && textAreaEl.value) lineNumEl.value.scrollTop = textAreaEl.value.scrollTop; };
+                const clearOutput = () => { output.value = ''; };
+
+                // Modals
+                const showDirModal = ref(false);
+                const browsingPath = ref('');
+                const browsingParent = ref(null);
+                const browsingDirs = ref([]);
+                const showSLModal = ref(false);
+                const slMode = ref('');
+                const slots = ref([]);
+                const selectedSlotId = ref(null);
+                const fileInput = ref(null);
+                const importedData = ref(null);
+
+                // Init
+                const init = async () => {
+                    loading.value = true;
+                    // Listeners for Resize
+                    window.addEventListener('mousemove', resize);
+                    window.addEventListener('mouseup', stopResize);
+
+                    try {
+                        const savedRoot = localStorage.getItem('anko_last_root');
+                        if (savedRoot) {
+                            await fetch('/api/root', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ path: savedRoot }) });
+                        }
+                    } catch(e) {}
+                    await fetchFiles();
+                };
+
+                const fetchFiles = async () => {
+                    try {
+                        const res = await fetch('/api/files');
+                        const data = await res.json();
+                        allFiles.value = data.files;
+                        rootPath.value = data.root;
+                        graph.value = data.graph || {};
+                        localStorage.setItem('anko_last_root', data.root);
+                        restoreSelection(data.root);
+                        recalcDepthCounts();
+                    } catch (e) { console.error(e); } 
+                    finally { loading.value = false; }
+                };
+
+                const getSelectKey = (root) => `anko_selected_${root}`;
+                const restoreSelection = (root) => {
+                    if (!root) return;
+                    try {
+                        const key = getSelectKey(root);
+                        const saved = JSON.parse(localStorage.getItem(key));
+                        if (Array.isArray(saved)) {
+                            const validFiles = saved.filter(f => allFiles.value.includes(f));
+                            selectedFiles.value = validFiles;
+                        } else { selectedFiles.value = []; }
+                    } catch (e) { selectedFiles.value = []; }
+                };
+
+                watch(selectedFiles, (newVal) => {
+                    if (!rootPath.value || loading.value) return;
+                    const key = getSelectKey(rootPath.value);
+                    localStorage.setItem(key, JSON.stringify(newVal));
+                }, { deep: true });
+
+                // UI Helpers
+                const getBtnClass = (file, type) => {
+                    const isActive = isDeepFullySelected(file, type);
+                    if (type === 'parents') return isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50';
+                    return isActive ? 'bg-green-600 text-white border-green-600' : 'bg-white text-green-600 border-green-200 hover:bg-green-50';
+                };
+
+                watch(searchDepth, () => { recalcDepthCounts(); });
+                const recalcDepthCounts = () => {
+                    const newCounts = {};
+                    allFiles.value.forEach(file => {
+                        if (!graph.value[file]) return; 
+                        newCounts[file] = { p: countDeep(file, 'parents'), c: countDeep(file, 'children') };
+                    });
+                    depthCounts.value = newCounts;
+                };
+                const countDeep = (startFile, type) => {
+                    const queue = [{ file: startFile, depth: 0 }];
+                    const visited = new Set(); let count = 0;
+                    while (queue.length > 0) {
+                        const { file, depth } = queue.shift();
+                        if (depth >= searchDepth.value) continue;
+                        const node = graph.value[file];
+                        if (!node || !node[type]) continue;
+                        node[type].forEach(nextFile => { if (!visited.has(nextFile)) { visited.add(nextFile); count++; queue.push({ file: nextFile, depth: depth + 1 }); } });
+                    }
+                    return count;
+                };
+                const getRelatedFiles = (startFile, type) => {
+                    const queue = [{ file: startFile, depth: 0 }];
+                    const visited = new Set(); const related = new Set(); related.add(startFile);
+                    while (queue.length > 0) {
+                        const { file, depth } = queue.shift();
+                        if (depth >= searchDepth.value) continue;
+                        const node = graph.value[file];
+                        if (!node || !node[type]) continue;
+                        node[type].forEach(nextFile => { if (!visited.has(nextFile)) { visited.add(nextFile); related.add(nextFile); queue.push({ file: nextFile, depth: depth + 1 }); } });
+                    }
+                    return related;
+                };
+                const isDeepFullySelected = (file, type) => {
+                    if (!depthCounts.value[file] || depthCounts.value[file][type === 'parents' ? 'p' : 'c'] === 0) return false;
+                    const related = getRelatedFiles(file, type); related.delete(file); 
+                    if (related.size === 0) return false;
+                    for (const r of related) { if (!selectedFiles.value.includes(r)) return false; }
+                    return true;
+                };
+                const toggleDeep = (file, type) => {
+                    const related = getRelatedFiles(file, type); related.delete(file); 
+                    if (related.size === 0) return;
+                    let isRelFullySelected = true;
+                    for (const r of related) { if (!selectedFiles.value.includes(r)) { isRelFullySelected = false; break; } }
+                    if (isRelFullySelected) { selectedFiles.value = selectedFiles.value.filter(f => !related.has(f)); }
+                    else { related.forEach(r => { if (!selectedFiles.value.includes(r)) selectedFiles.value.push(r); }); if (!selectedFiles.value.includes(file)) selectedFiles.value.push(file); }
+                };
+
+                // SL Actions
+                const openSaveLoadModal = async () => {
+                    showSLModal.value = true; slMode.value = ''; selectedSlotId.value = null; importedData.value = null;
+                    try { const res = await fetch('/api/slots'); const data = await res.json(); slots.value = data.map(s => ({ ...s, tempName: s.data ? (s.data.name || 'No Name') : '' })); } catch(e) {}
+                };
+                const getModeTitle = () => {
+                    if(slMode.value === 'save') return t('slTitleSave');
+                    if(slMode.value === 'load') return t('slTitleLoad');
+                    if(slMode.value === 'export') return t('slTitleExport');
+                    if(slMode.value === 'import') return t('slTitleImport');
+                    return '';
+                };
+                const isActionExecutable = () => {
+                    if(!selectedSlotId.value) return false;
+                    const slot = slots.value.find(s => s.id === selectedSlotId.value);
+                    if(slMode.value === 'load' && !slot.data) return false;
+                    if(slMode.value === 'export' && !slot.data) return false;
+                    return true;
+                };
+                const triggerImport = () => { if(fileInput.value) fileInput.value.click(); };
+                const handleFileImport = (event) => {
+                    const file = event.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const json = JSON.parse(e.target.result);
+                            if(!Array.isArray(json.files)) throw new Error('Invalid format');
+                            importedData.value = json; slMode.value = 'import';
+                        } catch(err) { alert(t('errLoad')); }
+                        event.target.value = '';
+                    };
+                    reader.readAsText(file);
+                };
+                const executeAction = async () => {
+                    const slot = slots.value.find(s => s.id === selectedSlotId.value);
+                    if (!slot) return;
+                    const now = new Date();
+                    const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+
+                    if (slMode.value === 'save') {
+                        const saveData = { files: selectedFiles.value, date: dateStr, name: slot.tempName || 'No Name' };
+                        await fetch(`/api/slots/${slot.id}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(saveData) });
+                        alert(t('msgSaved')); showSLModal.value = false;
+                    } else if (slMode.value === 'load') {
+                        const filesToLoad = slot.data.files || [];
+                        const validFiles = filesToLoad.filter(f => allFiles.value.includes(f));
+                        selectedFiles.value = validFiles;
+                        if (slot.tempName !== slot.data.name) {
+                             await fetch(`/api/slots/${slot.id}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ...slot.data, name: slot.tempName }) });
+                        }
+                        alert(t('msgLoaded')); showSLModal.value = false;
+                    } else if (slMode.value === 'export') {
+                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(slot.data, null, 2));
+                        const dl = document.createElement('a'); dl.setAttribute("href", dataStr);
+                        dl.setAttribute("download", `${(slot.data.name || 'anko_data').replace(/[\/\\:*?"<>|]/g, '_')}.json`);
+                        document.body.appendChild(dl); dl.click(); dl.remove();
+                    } else if (slMode.value === 'import') {
+                        if(!importedData.value) return;
+                        const saveData = { ...importedData.value, date: dateStr, name: slot.tempName || importedData.value.name || 'Imported' };
+                        await fetch(`/api/slots/${slot.id}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(saveData) });
+                        if(confirm(t('confirmImport'))) { selectedFiles.value = (saveData.files || []).filter(f => allFiles.value.includes(f)); }
+                        showSLModal.value = false;
+                    }
+                };
+
+                const filteredFiles = computed(() => {
+                    if (!searchQuery.value) return allFiles.value;
+                    return allFiles.value.filter(f => f.toLowerCase().includes(searchQuery.value.toLowerCase()));
+                });
+                const toggleFile = (f) => {
+                    if (selectedFiles.value.includes(f)) selectedFiles.value = selectedFiles.value.filter(x => x !== f);
+                    else selectedFiles.value.push(f);
+                };
+                const generate = async () => {
+                    if (selectedFiles.value.length === 0) return;
+                    output.value = "Generating...";
+                    const res = await fetch('/api/anko', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ files: selectedFiles.value }) });
+                    const data = await res.json(); output.value = data.content;
+                };
+                const copy = () => { navigator.clipboard.writeText(output.value); alert(t('msgCopied')); };
+                // Folder
+                const openDirModal = () => { showDirModal.value = true; browseDir(rootPath.value); };
+                const browseDir = async (targetPath) => { try { const res = await fetch('/api/dirs', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ path: targetPath }) }); const data = await res.json(); browsingPath.value = data.current; browsingParent.value = data.parent; browsingDirs.value = data.dirs; } catch (e) { alert(t('errLoad')); } };
+                const applyNewRoot = async () => {
+                    if (!browsingPath.value) return; loading.value = true; showDirModal.value = false;
+                    try { await fetch('/api/root', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ path: browsingPath.value }) }); selectedFiles.value = []; output.value = ""; await fetchFiles(); } catch (e) { alert(t('errMove')); loading.value = false; }
+                };
+
+                onMounted(() => { init(); });
+
+                return {
+                    locale, t, toggleLang,
+                    rootPath, allFiles, selectedFiles, searchQuery, searchDepth, output, loading, 
+                    filteredFiles, toggleFile, depthCounts, 
+                    showDirModal, browsingPath, browsingParent, browsingDirs, openDirModal, browseDir, applyNewRoot,
+                    showSLModal, slMode, slots, selectedSlotId, fileInput, openSaveLoadModal, executeAction, triggerImport, handleFileImport,
+                    toggleDeep, getBtnClass, generate, copy, clearOutput, 
+                    lineNumEl, textAreaEl, lineCount, syncScroll,
+                    // Resize
+                    sidebarWidth, startResize, isResizing
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
+"""
+
+# --- 5. Write Files Function ---
+def write_file(filename, content):
+    content = content.replace("__CODE__", "```")
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"✅ Created/Updated: {filename}")
+
+if __name__ == "__main__":
+    write_file(".gitignore", GITIGNORE_CONTENT)
+    write_file("README.md", README_TEMPLATE)
+    write_file("README.ja.md", README_JA_TEMPLATE)
+    write_file("public/index.html", INDEX_HTML_CONTENT)
+    
+    if not os.path.exists("sets"):
+        os.makedirs("sets")
+        with open("sets/.keep", "w") as f:
+            f.write("")
+        print("✅ Created directory: sets/")
+
+    print("\n🎉 Patch complete! Anko is ready for GitHub.")
