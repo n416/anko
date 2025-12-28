@@ -249,7 +249,7 @@
                 slTitleLoad: "読み込むデータを選んでください",
                 slTitleExport: "書き出すデータを選んでください",
                 slTitleImport: "復元する場所を選んでください",
-                confirmImport: "スロットに保存しました。\\nこのデータを現在の選択状態にも反映しますか？",
+                confirmImport: "スロットに保存しました。\nこのデータを現在の選択状態にも反映しますか？",
                 errLoad: "読込失敗",
                 errMove: "移動失敗"
             },
@@ -288,7 +288,7 @@
                 slTitleLoad: "Select a slot to load",
                 slTitleExport: "Select a slot to export",
                 slTitleImport: "Select a slot to overwrite",
-                confirmImport: "Imported to slot.\\nDo you want to apply this data to current selection?",
+                confirmImport: "Imported to slot.\nDo you want to apply this data to current selection?",
                 errLoad: "Failed to load",
                 errMove: "Failed to move"
             }
@@ -326,7 +326,7 @@
                 // Editor
                 const lineNumEl = ref(null);
                 const textAreaEl = ref(null);
-                const lineCount = computed(() => (output.value ? output.value.split('\\n').length : 1));
+                const lineCount = computed(() => (output.value ? output.value.split('\n').length : 1));
                 const syncScroll = () => { if(lineNumEl.value && textAreaEl.value) lineNumEl.value.scrollTop = textAreaEl.value.scrollTop; };
                 const clearOutput = () => { output.value = ''; };
 
