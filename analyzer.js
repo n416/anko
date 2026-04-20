@@ -37,6 +37,9 @@ class DependencyAnalyzer {
     }
 
     buildGraph() {
+        let pythonCount = 0;
+        const MAX_PYTHON_FILES = 300;
+
         for (const file of this.files) {
             const ext = path.extname(file).toLowerCase();
             const fullPath = path.join(this.rootDir, file);
@@ -46,7 +49,15 @@ class DependencyAnalyzer {
                 if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
                     imports = this.analyzeJsTs(fullPath);
                 } else if (ext === '.py') {
-                    imports = this.analyzePython(fullPath);
+                    pythonCount++;
+                    if (pythonCount <= MAX_PYTHON_FILES) {
+                        imports = this.analyzePython(fullPath);
+                    } else {
+                        if (pythonCount === MAX_PYTHON_FILES + 1) {
+                            console.warn(`[Warning] Python file limit exceeded (${MAX_PYTHON_FILES}). Skipping further python analysis to prevent freeze.`);
+                        }
+                        imports = [];
+                    }
                 } else if (ext === '.html' || ext === '.htm') {
                     imports = this.analyzeHtml(fullPath);
                 }

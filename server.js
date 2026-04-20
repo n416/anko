@@ -17,22 +17,33 @@ app.use(express.static('public'));
 app.use(express.json());
 
 const analyzer = new DependencyAnalyzer(TARGET_ROOT);
-const IGNORE = ['node_modules', '.git', 'dist', 'build', '.vscode', 'anko', 'package-lock.json', 'yarn.lock'];
+const IGNORE = ['node_modules', '.git', 'dist', 'build', '.vscode', 'anko', 'package-lock.json', 'yarn.lock', 'env', 'venv', '.venv', '.next', '.cache'];
 const toPosix = (p) => p.split(path.sep).join('/');
 
 // --- フォルダ一覧取得 ---
 app.post('/api/dirs', (req, res) => {
-    let targetPath = req.body.path || TARGET_ROOT;
+    console.log('[API /dirs] Request received with path:', req.body.path);
+    let targetPath = req.body.path;
+    if (targetPath === undefined) targetPath = TARGET_ROOT;
+    console.log('[API /dirs] Evaluated targetPath:', targetPath);
+    
     if (process.platform === 'win32' && (targetPath === '' || targetPath === '/')) {
+        console.log('[API /dirs] Hit win32 root drives block');
         const drives = [];
         for (let i = 65; i <= 90; i++) {
-            const drive = String.fromCharCode(i) + ':/';
+            const drive = String.fromCharCode(i) + ':\\';
             if (fs.existsSync(drive)) drives.push(drive);
         }
+        console.log('[API /dirs] Found drives:', drives);
         return res.json({ current: '', parent: null, dirs: drives, isRoot: true });
     }
+    
     try {
-        if (!fs.existsSync(targetPath)) targetPath = TARGET_ROOT;
+        console.log('[API /dirs] Attempting to read directory:', targetPath);
+        if (!fs.existsSync(targetPath)) {
+            console.log('[API /dirs] Path does not exist, falling back to TARGET_ROOT');
+            targetPath = TARGET_ROOT;
+        }
         const items = fs.readdirSync(targetPath, { withFileTypes: true });
         const dirs = items
             .filter(item => item.isDirectory() && !IGNORE.includes(item.name) && !item.name.startsWith('.'))
@@ -65,7 +76,14 @@ app.post('/api/root', (req, res) => {
 // --- ファイル一覧 ---
 app.get('/api/files', (req, res) => {
     const rawFiles = glob.sync('**/*', { cwd: TARGET_ROOT, nodir: true, ignore: IGNORE.map(i => `**/${i}/**`), dot: true });
-    const filteredFiles = rawFiles.map(f => toPosix(f)).filter(f => !f.startsWith('anko/') && !f.includes('/anko/'));
+    let filteredFiles = rawFiles.map(f => toPosix(f)).filter(f => !f.startsWith('anko/') && !f.includes('/anko/'));
+    
+    const MAX_FILES = 3000;
+    if (filteredFiles.length > MAX_FILES) {
+        console.warn(`[Warning] Too many files (${filteredFiles.length}). Limiting to ${MAX_FILES} to prevent freeze.`);
+        filteredFiles = filteredFiles.slice(0, MAX_FILES);
+    }
+    
     analyzer.refresh(filteredFiles);
     res.json({
         files: filteredFiles,
